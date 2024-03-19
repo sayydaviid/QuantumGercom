@@ -1,0 +1,89 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import math
+import random
+import time
+import numpy as np
+from auxiliar import *
+from request import *
+from rotas import *
+
+def gerador_requests(num_requests):
+    requests = []
+    for _ in range(num_requests):
+        source_base_station = random.choice([node for node, data in G.nodes(data=True) if data['type'] == 'BaseStation'])
+        target_base_station = random.choice([node for node, data in G.nodes(data=True) if data['type'] == 'BaseStation' and node != source_base_station])
+        requests.append((source_base_station, target_base_station))
+    return requests
+
+num_satellites = 30
+num_base_stations = 12
+num_requests = 10  # Número de solicitações
+time_window = 5  # Duração da simulação em unidades de tempo
+
+G = create_satellite_network(num_satellites, num_base_stations)
+
+successful_requests = 0
+failed_requests = 0
+final_total_drones = 0
+
+# Geração de solicitações aleatórias
+requests = gerador_requests(num_requests)
+
+# Loop de simulação
+for time_slot in range(num_requests):
+    print(f"\nTempo: {time_slot + 1}")
+
+    # Agendamento de envio das solicitações até o tempo X
+    requests_atuais = [req for req in requests if int(req[0].split('_')[-1]) <= time_slot]
+
+
+
+    for request in requests_atuais:
+        source_base_station, target_base_station = request
+        print(f"\nSolicitação de rota de {source_base_station} para {target_base_station}")
+        hops, total_distance = find_shortest_route(G, source_base_station, target_base_station, max_distance=1000)
+        if hops is not None:
+            for hop in hops:
+                print(f"De {hop['source']} para {hop['target']}, Distância: {hop['distance']} km")
+            print(f"Distância total: {total_distance} km")
+            successful_requests += 1
+        else:
+            print("Nenhuma rota direta encontrada.")
+            print("Necessário alocar drones auxiliares.")
+            hops, total_drones = find_shortest_route(G, source_base_station, target_base_station, max_distance=100000)
+            new_route, total_drones = allocate_drones(hops)
+            if new_route:
+                for hop in new_route:
+                    print(f"De {hop['source']} para {hop['target']}, Distância: {hop['distance']} km")
+                print(f"Distância total: {sum(hop['distance'] for hop in new_route)} km")
+                print("Total de drones:", total_drones)
+                successful_requests += 1
+                final_total_drones += total_drones
+            else:
+                print("Falha na solicitação")
+                failed_requests += 1
+
+    # Atualização da rede: movimento dos satélites
+    for satellite in G.nodes(data=True):
+        if satellite[1]['type'] == 'Satellite':
+            angle_degrees = satellite[1]['angle'] + random.uniform(1, 10)
+            x, y = calculate_circular_trajectory(1, angle_degrees)
+            satellite[1]['angle'] = angle_degrees
+            G.nodes[satellite[0]]['pos'] = (x, y)
+            for base_station in G.nodes(data=True):
+                if base_station[1]['type'] == 'BaseStation':
+                    base_pos = base_station[1]['pos']
+                    distance = math.sqrt((x - base_pos[0]) ** 2 + (y - base_pos[1]) ** 2) * 100.0
+                    G.edges[base_station[0], satellite[0]]['distance'] = distance
+
+    # Re-agendar as solicitações restantes após a atualização da rede
+    requests_atuais = [req for req in requests if int(req[0].split('_')[-1]) <= time_slot]
+
+
+# Resumo da simulação
+print("\nResumo da simulação:")
+print(f"Solicitações bem-sucedidas: {successful_requests}")
+print(f"Solicitações falhadas: {failed_requests}")
+print(f"Número total de drones: {final_total_drones}")
